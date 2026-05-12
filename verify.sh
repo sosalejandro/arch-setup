@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+# Sanity check the setup. Reports the state of every component;
+# does not change anything.
+
+set -uo pipefail
+
+green() { printf "\033[1;32m%s\033[0m" "$*"; }
+red()   { printf "\033[1;31m%s\033[0m" "$*"; }
+yellow(){ printf "\033[1;33m%s\033[0m" "$*"; }
+
+check_service() {
+  local svc="$1"
+  if systemctl is-active --quiet "$svc"; then
+    printf "  %s %s\n" "$(green "[ok]")" "$svc is active"
+  else
+    printf "  %s %s\n" "$(red "[!!]")" "$svc is NOT active"
+  fi
+}
+
+check_command() {
+  local cmd="$1"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    local v
+    v="$("$cmd" --version 2>&1 | head -1 || true)"
+    printf "  %s %-12s %s\n" "$(green "[ok]")" "$cmd" "${v:-installed}"
+  else
+    printf "  %s %s not installed\n" "$(red "[!!]")" "$cmd"
+  fi
+}
+
+echo
+echo "=== services ==="
+for s in sshd xrdp avahi-daemon systemd-logind ufw; do check_service "$s"; done
+
+echo
+echo "=== commands ==="
+for c in git node npm claude fnm yay nvim rg fd htop; do check_command "$c"; done
+
+echo
+echo "=== lid behavior ==="
+if systemctl show systemd-logind | grep -q "^HandleLidSwitch=ignore"; then
+  printf "  %s lid-close is ignored (will not suspend)\n" "$(green "[ok]")"
+else
+  printf "  %s lid-close still suspends — check /etc/systemd/logind.conf.d/lid.conf\n" "$(red "[!!]")"
+fi
+
+echo
+echo "=== mDNS ==="
+if grep -E '^hosts:.*mdns4_minimal' /etc/nsswitch.conf >/dev/null; then
+  printf "  %s nsswitch.conf has mdns4_minimal\n" "$(green "[ok]")"
+else
+  printf "  %s nsswitch.conf missing mdns4_minimal\n" "$(red "[!!]")"
+fi
+
+echo
+echo "=== SSH config ==="
+if sudo grep -Eq '^PasswordAuthentication[[:space:]]+no' /etc/ssh/sshd_config 2>/dev/null; then
+  printf "  %s SSH password auth is disabled (key-only)\n" "$(green "[ok]")"
+else
+  printf "  %s SSH password auth is enabled — run phase3-harden.sh once key auth works\n" "$(yellow "[..]")"
+fi
+
+echo
+echo "=== xrdp session ==="
+if [[ -f "$HOME/.xsession" ]] && grep -q startxfce4 "$HOME/.xsession"; then
+  printf "  %s ~/.xsession launches Xfce\n" "$(green "[ok]")"
+else
+  printf "  %s ~/.xsession is missing or does not launch Xfce\n" "$(red "[!!]")"
+fi
+
+echo
+echo "=== network ==="
+ip -4 addr show scope global | awk '/inet /{printf "  ip: %s (%s)\n", $2, $NF}' || true
+echo "  hostname: $(hostname).local"
+
+echo

@@ -1,0 +1,5 @@
+# Always check out shell scripts with LF endings, regardless of host OS.
+# Required for Linux execution — CRLF causes "bad interpreter" errors.
+*.sh text eol=lf
+*.bash text eol=lf
+*.zsh text eol=lf
