@@ -42,6 +42,17 @@ sudo sshd -t || fail "sshd_config syntax check failed. Backup is at /etc/ssh/ssh
 sudo systemctl restart sshd
 
 # ---------------------------------------------------------------------------
+# Disable firewalld if active. firewalld and ufw both install nftables rules
+# into the same kernel hooks; running both produces silent failures where ufw
+# rules appear correct (`ufw status`) but firewalld's chains actually filter
+# packets first. EndeavourOS ships firewalld disabled by default but it can
+# get enabled via Welcome app or manual configuration.
+if systemctl is-active --quiet firewalld 2>/dev/null; then
+  warn "firewalld is active — disabling it (cannot coexist with ufw)"
+  sudo systemctl disable --now firewalld
+fi
+
+# ---------------------------------------------------------------------------
 log "Installing and configuring ufw (allow ssh, rdp, mdns)"
 sudo pacman -S --needed --noconfirm ufw
 sudo ufw default deny incoming

@@ -50,18 +50,20 @@ EOF
 chmod +x "$HOME/.xinitrc"
 
 # Layer 3: /etc/xrdp/startwm.sh — system-level override that guarantees Xfce launches
-# Back up the original first, then replace with a minimal Xfce launcher.
+# with a working D-Bus session (without dbus-launch you get "Unable to contact
+# settings server" because xfconfd has no session bus to bind to).
+# Back up the original first, then replace with a minimal dbus-launched Xfce launcher.
 if [[ -f /etc/xrdp/startwm.sh ]] && ! grep -q '# managed-by: g7-setup' /etc/xrdp/startwm.sh; then
   sudo cp /etc/xrdp/startwm.sh "/etc/xrdp/startwm.sh.bak.$(date +%s)"
-  sudo tee /etc/xrdp/startwm.sh >/dev/null <<'EOF'
+fi
+sudo tee /etc/xrdp/startwm.sh >/dev/null <<'EOF'
 #!/bin/sh
 # managed-by: g7-setup
 unset DBUS_SESSION_BUS_ADDRESS
 unset XDG_RUNTIME_DIR
-exec /usr/bin/startxfce4
+exec dbus-launch --exit-with-session /usr/bin/startxfce4
 EOF
-  sudo chmod +x /etc/xrdp/startwm.sh
-fi
+sudo chmod +x /etc/xrdp/startwm.sh
 
 # ---------------------------------------------------------------------------
 log "Enabling mDNS so <hostname>.local resolves on the LAN"

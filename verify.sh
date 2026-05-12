@@ -32,6 +32,12 @@ echo
 echo "=== services ==="
 for s in sshd xrdp avahi-daemon systemd-logind ufw; do check_service "$s"; done
 
+# Conflict check: ufw and firewalld must not both be active. If they are,
+# firewalld silently filters packets even though `ufw status` looks correct.
+if systemctl is-active --quiet ufw && systemctl is-active --quiet firewalld; then
+  printf "  %s firewalld is ALSO active — disables ufw rules silently. Run: sudo systemctl disable --now firewalld\n" "$(red "[!!]")"
+fi
+
 echo
 echo "=== commands ==="
 for c in git node npm claude fnm yay nvim rg fd htop; do check_command "$c"; done

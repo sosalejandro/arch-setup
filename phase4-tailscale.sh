@@ -2,6 +2,10 @@
 # Phase 4: Tailscale mesh networking
 # Installs Tailscale, enables MagicDNS-friendly hostname, opens ufw for tailscale0.
 # Run on the G7. Re-runnable: if Tailscale is already up, it just refreshes ufw rules.
+#
+# Optional arg: a short hostname for this machine (e.g. ./phase4-tailscale.sh g7)
+# When provided, sets both the system hostname AND the Tailscale hostname so
+# MagicDNS resolves the short name from anywhere on the tailnet.
 
 set -euo pipefail
 
@@ -10,6 +14,18 @@ warn() { printf "\n\033[1;33m!!\033[0m %s\n" "$*"; }
 fail() { printf "\n\033[1;31mxx\033[0m %s\n" "$*"; exit 1; }
 
 [[ $EUID -eq 0 ]] && fail "Do not run as root."
+
+NEW_HOSTNAME="${1:-}"
+
+# ---------------------------------------------------------------------------
+# Optional: rename hostname (must be a valid DNS label — lowercase, digits, hyphen).
+if [[ -n "$NEW_HOSTNAME" ]]; then
+  if [[ ! "$NEW_HOSTNAME" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]]; then
+    fail "Hostname '$NEW_HOSTNAME' is not a valid DNS label. Use lowercase letters, digits, and hyphens only (no leading/trailing hyphens, max 63 chars)."
+  fi
+  log "Renaming system hostname to '$NEW_HOSTNAME'"
+  sudo hostnamectl set-hostname "$NEW_HOSTNAME"
+fi
 
 # ---------------------------------------------------------------------------
 log "Installing Tailscale from official Arch extra repo"
@@ -27,11 +43,19 @@ sudo systemctl enable --now tailscaled
 if sudo tailscale status >/dev/null 2>&1 && sudo tailscale status --json 2>/dev/null | grep -q '"BackendState": "Running"'; then
   log "Tailscale already up. Refreshing settings only."
   sudo tailscale set --ssh
+  if [[ -n "$NEW_HOSTNAME" ]]; then
+    log "Updating Tailscale hostname to '$NEW_HOSTNAME'"
+    sudo tailscale set --hostname "$NEW_HOSTNAME"
+  fi
 else
   log "Bringing up Tailscale. You'll get an auth URL — open it on any browser, sign in, authorize this device."
   echo
   read -rp "Press Enter to continue..." _
-  sudo tailscale up --ssh
+  if [[ -n "$NEW_HOSTNAME" ]]; then
+    sudo tailscale up --ssh --hostname "$NEW_HOSTNAME"
+  else
+    sudo tailscale up --ssh
+  fi
 fi
 
 # ---------------------------------------------------------------------------
