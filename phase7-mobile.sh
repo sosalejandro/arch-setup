@@ -18,10 +18,33 @@ fail() { printf "\n\033[1;31mxx\033[0m %s\n" "$*"; exit 1; }
 
 # ---------------------------------------------------------------------------
 log "Java (OpenJDK 21 LTS) and Gradle"
-# Android Gradle Plugin 8.x supports JDK 17/21; 21 is current LTS as of late 2025.
+# Android Gradle Plugin (AGP) officially supports JDK 17 and JDK 21 only.
+# JDK 26 (current non-LTS) is too new for the Android toolchain — builds may
+# warn or fail. We install jdk21-openjdk specifically for Android work;
+# any newer JDK you have (e.g. jdk-openjdk, Coursier's bundled JDK) keeps
+# working for Scala / general JVM dev. Multiple JDKs coexist under /usr/lib/jvm.
 sudo pacman -S --needed --noconfirm jdk21-openjdk gradle
-# Set the default Java if multiple JDKs are installed
-sudo archlinux-java set java-21-openjdk 2>/dev/null || true
+
+# Only set JDK 21 as the SYSTEM default if there isn't already a default.
+# This preserves whatever you picked previously (e.g. JDK 26 for Scala).
+if ! archlinux-java status 2>/dev/null | grep -q '^\s*[[:alnum:]-]\+ \(default\)'; then
+  sudo archlinux-java set java-21-openjdk
+  warn "No default JDK was set — set jdk21 as system default."
+else
+  log "Keeping existing system-default JDK: $(archlinux-java get)"
+fi
+
+# Capture JDK 21 path for Android-specific use (so Gradle on Android can
+# point JAVA_HOME at it explicitly without flipping the system default).
+JDK21_HOME=/usr/lib/jvm/java-21-openjdk
+if ! grep -q 'ANDROID_JAVA_HOME' "$HOME/.bashrc" 2>/dev/null; then
+  cat >> "$HOME/.bashrc" <<EOF
+
+# Use this for Android Gradle builds when your default JDK is newer than 21:
+#   JAVA_HOME="\$ANDROID_JAVA_HOME" ./gradlew assembleDebug
+export ANDROID_JAVA_HOME=$JDK21_HOME
+EOF
+fi
 
 # ---------------------------------------------------------------------------
 log "Android platform tools (adb, fastboot)"
@@ -86,11 +109,21 @@ log "Phase 7 complete."
 cat <<EOF
 
 Installed:
-  - Java     : $(java -version 2>&1 | head -1)
-  - Gradle   : $(gradle --version 2>/dev/null | grep '^Gradle' || echo "(open new shell)")
-  - adb      : $(adb --version 2>/dev/null | head -1)
-  - sdkman.  : $SDKMANAGER
-  - ANDROID_HOME = $ANDROID_HOME
+  - Java (default) : $(java -version 2>&1 | head -1)
+  - JDK 21 path    : $JDK21_HOME (use via \$ANDROID_JAVA_HOME for Android)
+  - Gradle         : $(gradle --version 2>/dev/null | grep '^Gradle' || echo "(open new shell)")
+  - adb            : $(adb --version 2>/dev/null | head -1)
+  - sdkmanager     : $SDKMANAGER
+  - ANDROID_HOME   = $ANDROID_HOME
+
+JDK selection for Android Gradle builds:
+  AGP officially supports JDK 17 / 21. If your default is JDK 26 (e.g. from Scala/
+  Coursier), pass JDK 21 to gradle explicitly:
+    JAVA_HOME=\$ANDROID_JAVA_HOME ./gradlew assembleDebug
+  Or change the system default once with:
+    sudo archlinux-java set java-21-openjdk
+  Show installed JDKs:
+    archlinux-java status
 
 React Native:
   After re-opening your shell:
