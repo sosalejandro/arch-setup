@@ -13,6 +13,10 @@ mainly used over SSH + xRDP from a Windows main laptop.
 | `phase2-dev.sh`  | After phase 1 + SSH from Windows confirmed working | On the G7 (over SSH) |
 | `phase3-harden.sh` | Optional, after SSH key auth is confirmed working | On the G7 (over SSH) |
 | `phase4-tailscale.sh` | Optional, anytime — best after phase 3 | On the G7 (over SSH) |
+| `phase5-languages.sh` | Optional. Languages: Go, Rust, Python, .NET, Scala 3, pnpm, Task | On the G7 (over SSH) |
+| `phase6-infrastructure.sh` | Optional. IaC, cloud CLIs, k8s, Docker, SOPS, age | On the G7 (over SSH) |
+| `phase7-mobile.sh` | Optional. JDK, Android SDK, Gradle, ADB, RN/Watchman | On the G7 (over SSH) |
+| `phase8-vms.sh` | Optional. KVM/QEMU + libvirt + virt-manager for VMs | On the G7 (over SSH) |
 | `verify.sh` | Anytime, to sanity-check the setup | On the G7 |
 
 All scripts are idempotent — re-running them is safe.
@@ -54,12 +58,17 @@ curl -fsSL https://raw.githubusercontent.com/<you>/g7-setup/main/phase1-base.sh 
 ## Running
 
 ```bash
-./phase1-base.sh        # Phase 1: at the G7 directly
+./phase1-base.sh                # Phase 1: at the G7 directly
 # (test SSH + RDP from Windows here, then close the lid)
-./phase2-dev.sh         # Phase 2: over SSH
-./phase3-harden.sh      # Phase 3: optional — SSH key-only, ufw firewall
-./phase4-tailscale.sh   # Phase 4: optional — Tailscale mesh, MagicDNS hostname
-./verify.sh             # Sanity check
+./phase2-dev.sh                 # Phase 2: over SSH
+./phase3-harden.sh              # Phase 3: optional — SSH key-only, ufw firewall
+./phase4-tailscale.sh           # Phase 4: optional — Tailscale mesh
+./phase4-tailscale.sh g7        # Phase 4 variant: also renames hostname to 'g7'
+./phase5-languages.sh           # Phase 5: optional — programming languages
+./phase6-infrastructure.sh      # Phase 6: optional — cloud / IaC / k8s / Docker
+./phase7-mobile.sh              # Phase 7: optional — Android / RN
+./phase8-vms.sh                 # Phase 8: optional — KVM/QEMU VMs
+./verify.sh                     # Sanity check
 ```
 
 ## Phase 4 details
