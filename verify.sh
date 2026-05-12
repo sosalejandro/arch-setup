@@ -38,10 +38,15 @@ for c in git node npm claude fnm yay nvim rg fd htop; do check_command "$c"; don
 
 echo
 echo "=== lid behavior ==="
-if systemctl show systemd-logind | grep -q "^HandleLidSwitch=ignore"; then
+# Query the running logind daemon directly via DBus (authoritative —
+# `systemctl show systemd-logind` doesn't expose daemon config as unit properties).
+LID_VAL="$(busctl --system get-property org.freedesktop.login1 /org/freedesktop/login1 \
+  org.freedesktop.login1.Manager HandleLidSwitch 2>/dev/null | awk -F'"' '{print $2}')"
+if [[ "$LID_VAL" == "ignore" ]]; then
   printf "  %s lid-close is ignored (will not suspend)\n" "$(green "[ok]")"
 else
-  printf "  %s lid-close still suspends — check /etc/systemd/logind.conf.d/lid.conf\n" "$(red "[!!]")"
+  printf "  %s lid-close = '%s' — drop in /etc/systemd/logind.conf.d/lid.conf and restart systemd-logind\n" \
+    "$(red "[!!]")" "${LID_VAL:-unknown}"
 fi
 
 echo
