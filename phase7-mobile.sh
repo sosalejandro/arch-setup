@@ -90,8 +90,30 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-log "Watchman (React Native file watching) — AUR"
-yay -S --needed --noconfirm watchman
+# Watchman: skipped on purpose.
+# The AUR 'watchman' package depends on a flock of Facebook libraries
+# (folly, fizz, fbthrift, fb303, mvfst) pinned to exact versions that
+# routinely fall out of sync with the AUR. Result: pacman/yay can't resolve.
+#
+# React Native's Metro bundler falls back to Linux inotify without watchman.
+# The 'EMFILE / too many open files' errors people blame on missing watchman
+# are actually the kernel's default inotify watch limit (~65k) being too low
+# for the file count in node_modules + project sources. Raising that limit
+# makes RN run cleanly on Linux without watchman.
+log "Raising fs.inotify.max_user_watches for React Native (Meta's recommendation: 524288)"
+INOTIFY_CONF=/etc/sysctl.d/99-inotify.conf
+if [[ ! -f "$INOTIFY_CONF" ]] || ! grep -q max_user_watches "$INOTIFY_CONF"; then
+  echo "fs.inotify.max_user_watches=524288" | sudo tee "$INOTIFY_CONF" >/dev/null
+  echo "fs.inotify.max_queued_events=32768" | sudo tee -a "$INOTIFY_CONF" >/dev/null
+  echo "fs.inotify.max_user_instances=512" | sudo tee -a "$INOTIFY_CONF" >/dev/null
+  sudo sysctl --system >/dev/null
+fi
+
+# If you specifically need watchman (some monorepos / fbjs tooling),
+# Meta ships prebuilt linux-x64 binaries on GitHub:
+#   https://github.com/facebook/watchman/releases
+# Download, extract, and put 'watchman' on your PATH. The build-from-source
+# AUR route is not worth the breakage.
 
 # ---------------------------------------------------------------------------
 # Allow the user to access USB-connected Android devices without root.
@@ -127,9 +149,11 @@ JDK selection for Android Gradle builds:
 
 React Native:
   After re-opening your shell:
-    npx react-native init MyApp
-  Or with the new CLI:
     npx @react-native-community/cli init MyApp
+  Watchman is NOT installed (AUR dependency rot). Metro uses inotify instead;
+  the watch limits are pre-tuned to 524288 in /etc/sysctl.d/99-inotify.conf.
+  If you ever do need watchman, grab the prebuilt binary from:
+    https://github.com/facebook/watchman/releases
 
 USB device debugging:
   Plug device → 'adb devices'. If "no permissions", re-login (group change pending).
