@@ -69,8 +69,13 @@ fi
 # ---------------------------------------------------------------------------
 log "Extracting Kali QEMU image (golden disk)"
 if [[ ! -f "$GOLDEN_PATH" ]]; then
-  TMP_EXTRACT=$(mktemp -d)
-  log "Extracting archive to $TMP_EXTRACT (~10-15 GB during extraction)"
+  # IMPORTANT: extract on a disk-backed filesystem, not /tmp (which is tmpfs
+  # on Arch and would consume RAM). 10-15 GB during extraction.
+  TMP_EXTRACT="$GOLDEN_DIR/.extract-tmp"
+  rm -rf "$TMP_EXTRACT"
+  mkdir -p "$TMP_EXTRACT"
+
+  log "Extracting archive to $TMP_EXTRACT (disk-backed, ~10-15 GB during extraction)"
   7z x -o"$TMP_EXTRACT" "$ARCHIVE_PATH" >/dev/null
 
   EXTRACTED_QCOW=$(find "$TMP_EXTRACT" -maxdepth 3 -name '*.qcow2' -type f | head -1)
