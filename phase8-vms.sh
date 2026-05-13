@@ -34,7 +34,6 @@ sudo pacman -S --needed --noconfirm \
   virt-manager \
   virt-viewer \
   dnsmasq \
-  bridge-utils \
   edk2-ovmf \
   swtpm \
   iptables-nft
@@ -42,6 +41,8 @@ sudo pacman -S --needed --noconfirm \
 # qemu-full pulls all qemu-system-*, which is the right default for a workstation.
 # edk2-ovmf provides UEFI firmware (required for modern Windows + macOS guests).
 # swtpm gives software TPM 2.0 (required for Windows 11 guests).
+# bridge-utils used to be here — Arch dropped it; libvirt uses iproute2/netlink
+# for bridging, so the package is no longer needed.
 
 # ---------------------------------------------------------------------------
 log "Enabling libvirtd and related services"
