@@ -17,6 +17,7 @@ mainly used over SSH + xRDP from a Windows main laptop.
 | `phase6-infrastructure.sh` | Optional. IaC, cloud CLIs, k8s, Docker, SOPS, age | On the G7 (over SSH) |
 | `phase7-mobile.sh` | Optional. JDK, Android SDK, Gradle, ADB, RN/Watchman | On the G7 (over SSH) |
 | `phase8-vms.sh` | Optional. KVM/QEMU + libvirt + virt-manager for VMs | On the G7 (over SSH) |
+| `vm-ephemeral-browser.sh` | Optional utility. Creates a hardened ephemeral Lubuntu Live VM for isolated browsing | On the G7 (over SSH), after phase 8 |
 | `verify.sh` | Anytime, to sanity-check the setup | On the G7 |
 
 All scripts are idempotent — re-running them is safe.
