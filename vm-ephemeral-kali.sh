@@ -1,18 +1,19 @@
 #!/usr/bin/env bash
-# Create + manage an ephemeral Kali Linux VM (Live ISO, no persistence).
+# Create + manage an ephemeral Kali Linux VM using Kali's pre-built QEMU image.
 #
-# Threat model: penetration-testing / CTF / forensics work where
-# reproducibility matters and you want zero artifact on the host.
+# Why not the live ISO: as of 2026, Kali no longer offers a direct download for
+# the live amd64 ISO (torrents only). They do still ship a pre-built qemu image
+# (.7z, ~4 GB) as direct download. We treat it as a read-only "golden" disk and
+# use libvirt's transient-disk feature: each VM start gets an automatic
+# discard-on-shutdown overlay, so changes never persist across sessions.
 #
-# Same hardening as vm-ephemeral-browser.sh:
-#   - No persistent disk (live boot, RAM-only)
+# Same hardening defaults as vm-ephemeral-browser.sh:
 #   - No clipboard sharing
 #   - No USB passthrough
 #   - No shared filesystem
 #
-# Network: NOT isolated from the host (unlike browse-eph) because pentesting
-# sometimes needs to reach the host or be reachable. If you want Kali fully
-# isolated from your host, set ISOLATE_FROM_HOST=1 before running.
+# Network: NOT host-isolated by default (pentesting often needs network access).
+# Set ISOLATE_FROM_HOST=1 to apply the host-isolation firewall rules.
 #
 # Requires phase8-vms.sh first.
 
@@ -23,13 +24,13 @@ VM_NAME="kali-eph"
 RAM_MB=6144
 VCPUS=4
 
-# Kali Live ISO (Xfce flavour — lightest, default Kali experience)
-# Update the URL if a newer release exists.
-ISO_URL="https://cdimage.kali.org/kali-2026.1/kali-linux-2026.1-live-amd64.iso"
-ISO_DIR="$HOME/VMs/iso"
-ISO_PATH="$ISO_DIR/kali-live.iso"
+# Update KALI_VERSION when a newer release is in https://cdimage.kali.org/current/
+KALI_VERSION="2026.1"
+ARCHIVE_URL="https://cdimage.kali.org/current/kali-linux-${KALI_VERSION}-qemu-amd64.7z"
+ARCHIVE_PATH="$HOME/VMs/iso/kali-qemu-${KALI_VERSION}.7z"
+GOLDEN_DIR="$HOME/VMs/disks"
+GOLDEN_PATH="$GOLDEN_DIR/kali-golden.qcow2"
 
-# Optional: set to 1 to apply the same host-isolation firewall rules as browse-eph
 ISOLATE_FROM_HOST="${ISOLATE_FROM_HOST:-0}"
 
 # ---------------------------------------------------------------------------
@@ -41,28 +42,55 @@ fail() { printf "\n\033[1;31mxx\033[0m %s\n" "$*"; exit 1; }
 
 # ---------------------------------------------------------------------------
 log "Checking prerequisites"
-command -v virsh >/dev/null      || fail "virsh not found. Run ./phase8-vms.sh first."
+command -v virsh        >/dev/null || fail "virsh not found. Run ./phase8-vms.sh first."
 command -v virt-install >/dev/null || fail "virt-install not found."
-command -v curl >/dev/null       || fail "curl not found."
+command -v curl         >/dev/null || fail "curl not found."
+command -v 7z           >/dev/null || {
+  log "Installing p7zip (needed to extract Kali's archive)"
+  sudo pacman -S --needed --noconfirm p7zip
+}
 
 if ! id -nG "$USER" | tr ' ' '\n' | grep -qx libvirt; then
   fail "$USER not in 'libvirt' group. Logout and back in after phase 8, then re-run."
 fi
 
+mkdir -p "$(dirname "$ARCHIVE_PATH")" "$GOLDEN_DIR"
+
 # ---------------------------------------------------------------------------
-log "Downloading Kali Live ISO if missing"
-mkdir -p "$ISO_DIR"
-if [[ ! -f "$ISO_PATH" ]]; then
-  log "Fetching from $ISO_URL (~4 GB)"
-  curl -fL --progress-bar -o "$ISO_PATH.tmp" "$ISO_URL"
-  mv "$ISO_PATH.tmp" "$ISO_PATH"
+log "Downloading Kali pre-built QEMU archive if missing"
+if [[ ! -f "$ARCHIVE_PATH" ]]; then
+  log "Fetching from $ARCHIVE_URL (~4 GB)"
+  curl -fL --progress-bar -o "$ARCHIVE_PATH.tmp" "$ARCHIVE_URL"
+  mv "$ARCHIVE_PATH.tmp" "$ARCHIVE_PATH"
 else
-  log "ISO already present at $ISO_PATH ($(du -h "$ISO_PATH" | cut -f1))"
+  log "Archive already present at $ARCHIVE_PATH ($(du -h "$ARCHIVE_PATH" | cut -f1))"
 fi
 
 # ---------------------------------------------------------------------------
-# Optional: apply host-isolation rules (off by default — pentesting sometimes
-# needs to interact with the host).
+log "Extracting Kali QEMU image (golden disk)"
+if [[ ! -f "$GOLDEN_PATH" ]]; then
+  TMP_EXTRACT=$(mktemp -d)
+  log "Extracting archive to $TMP_EXTRACT (~10-15 GB during extraction)"
+  7z x -o"$TMP_EXTRACT" "$ARCHIVE_PATH" >/dev/null
+
+  EXTRACTED_QCOW=$(find "$TMP_EXTRACT" -maxdepth 3 -name '*.qcow2' -type f | head -1)
+  if [[ -z "$EXTRACTED_QCOW" ]]; then
+    rm -rf "$TMP_EXTRACT"
+    fail "No .qcow2 found in extracted archive. Inspect $ARCHIVE_PATH manually."
+  fi
+
+  log "Moving golden disk to $GOLDEN_PATH"
+  mv "$EXTRACTED_QCOW" "$GOLDEN_PATH"
+  rm -rf "$TMP_EXTRACT"
+
+  log "Marking golden disk read-only (required for transient overlay)"
+  chmod 444 "$GOLDEN_PATH"
+else
+  log "Golden disk already present at $GOLDEN_PATH ($(du -h "$GOLDEN_PATH" | cut -f1))"
+fi
+
+# ---------------------------------------------------------------------------
+# Optional: apply host-isolation firewall rules
 # ---------------------------------------------------------------------------
 if [[ "$ISOLATE_FROM_HOST" == "1" ]]; then
   if systemctl is-active --quiet ufw; then
@@ -79,20 +107,24 @@ if [[ "$ISOLATE_FROM_HOST" == "1" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Define the VM with a transient disk so changes auto-discard on shutdown.
+# transient=on tells libvirt to create a private overlay on start and delete
+# it on stop, leaving the golden disk untouched.
+# ---------------------------------------------------------------------------
 if sudo virsh dominfo "$VM_NAME" >/dev/null 2>&1; then
-  log "VM '$VM_NAME' already exists — skipping creation"
+  log "VM '$VM_NAME' already exists — skipping creation. To recreate: virsh undefine --nvram $VM_NAME"
 else
-  log "Defining VM '$VM_NAME' (RAM=${RAM_MB} MB, vCPU=${VCPUS}, no persistent disk)"
+  log "Defining VM '$VM_NAME' (RAM=${RAM_MB} MB, vCPU=${VCPUS}, transient disk)"
   sudo virt-install \
     --connect qemu:///system \
     --name "$VM_NAME" \
+    --import \
     --memory "$RAM_MB" \
     --vcpus "$VCPUS" \
     --cpu host-passthrough \
     --osinfo debian13 \
-    --cdrom "$ISO_PATH" \
     --boot uefi,menu=on \
-    --disk none \
+    --disk path="$GOLDEN_PATH",format=qcow2,bus=virtio,readonly=on,transient=on \
     --network network=default,model=virtio \
     --graphics spice,listen=127.0.0.1 \
     --video qxl \
@@ -124,20 +156,31 @@ log "Done."
 
 cat <<EOF
 
-Kali ephemeral VM ready. Manage with:
+Kali ephemeral VM ready.
 
+How ephemeral works here:
+  - The golden disk ($GOLDEN_PATH) is read-only.
+  - Each 'virsh start' creates a private overlay; all changes (browser history,
+    installed packages, files) go to the overlay.
+  - 'virsh shutdown' destroys the overlay → next start = pristine Kali again.
+  - This is a libvirt 'transient' disk; no manual cleanup needed.
+
+Manage:
   Start:        virsh -c qemu:///system start $VM_NAME
-  View window:  virt-viewer -c qemu:///system $VM_NAME
+  View:         virt-viewer -c qemu:///system $VM_NAME
   Shutdown:     virsh -c qemu:///system shutdown $VM_NAME
   Force off:    virsh -c qemu:///system destroy $VM_NAME
 
-Kali Live default login: kali / kali
+Default credentials: kali / kali (change on first boot if you reuse the VM).
 
-Host isolation: $([ "$ISOLATE_FROM_HOST" = "1" ] && echo "ENABLED (re-runnable without env var)" || echo "DISABLED (re-run with ISOLATE_FROM_HOST=1 to enable)")
+Host isolation: $([ "$ISOLATE_FROM_HOST" = "1" ] && echo "ENABLED" || echo "DISABLED (re-run with ISOLATE_FROM_HOST=1 to enable)")
 
-State on shutdown:
-  - All Kali tooling resets to default
-  - No findings persist (export findings before shutdown!)
-  - Use 'scp file user@host:dir' to copy out findings before stopping the VM
+Exporting findings before shutdown:
+  scp findings.txt user@elsewhere:dest/
+  # or 'tailscale send' / SMB / whatever you have set up
+
+To free disk space, you can delete the original .7z archive — the golden disk
+stays where it is and the archive is no longer needed:
+  rm $ARCHIVE_PATH
 
 EOF
