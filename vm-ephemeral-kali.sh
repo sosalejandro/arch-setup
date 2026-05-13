@@ -100,13 +100,15 @@ else
     --controller type=usb,model=none \
     --rng /dev/urandom \
     --noautoconsole \
-    --print-xml > /tmp/${VM_NAME}.xml
+    --print-xml=1 > /tmp/${VM_NAME}.xml
 
   log "Hardening XML: removing clipboard channel + USB redirection"
   python3 - <<EOF
 import re
 p = '/tmp/${VM_NAME}.xml'
 with open(p) as f: x = f.read()
+m = re.search(r'<domain\b.*?</domain>', x, flags=re.DOTALL)
+if m: x = m.group(0)
 x = re.sub(r"<channel type='spicevmc'>.*?</channel>", '', x, flags=re.DOTALL)
 x = re.sub(r"<redirdev[^/]*/>", '', x)
 x = re.sub(r"<redirdev[^>]*>.*?</redirdev>", '', x, flags=re.DOTALL)

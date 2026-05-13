@@ -114,17 +114,19 @@ else
     --controller type=usb,model=none \
     --rng /dev/urandom \
     --noautoconsole \
-    --print-xml > /tmp/${VM_NAME}.xml
+    --print-xml=1 > /tmp/${VM_NAME}.xml
 
-  # Strip the spicevmc clipboard channel from the XML before defining
+  # Strip clipboard channel + USB redirection. Also defensively keep only the
+  # first <domain>...</domain> block — virt-install can print multiple stage
+  # XMLs and virsh define refuses anything after the first document.
   log "Hardening XML: removing clipboard/copy-paste channel"
   python3 - <<EOF
-import sys, re
+import re
 p = '/tmp/${VM_NAME}.xml'
 with open(p) as f: x = f.read()
-# Remove <channel type='spicevmc'>...</channel> blocks
+m = re.search(r'<domain\b.*?</domain>', x, flags=re.DOTALL)
+if m: x = m.group(0)
 x = re.sub(r"<channel type='spicevmc'>.*?</channel>", '', x, flags=re.DOTALL)
-# Remove <redirdev> entries (USB redirection)
 x = re.sub(r"<redirdev[^/]*/>", '', x)
 x = re.sub(r"<redirdev[^>]*>.*?</redirdev>", '', x, flags=re.DOTALL)
 with open(p, 'w') as f: f.write(x)
