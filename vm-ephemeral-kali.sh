@@ -27,8 +27,10 @@ VCPUS=4
 # Update KALI_VERSION when a newer release is in https://cdimage.kali.org/current/
 KALI_VERSION="2026.1"
 ARCHIVE_URL="https://cdimage.kali.org/current/kali-linux-${KALI_VERSION}-qemu-amd64.7z"
+# Archive download stays in user home (one-time, not accessed by qemu).
 ARCHIVE_PATH="$HOME/VMs/iso/kali-qemu-${KALI_VERSION}.7z"
-GOLDEN_DIR="$HOME/VMs/disks"
+# Golden disk must live where libvirt's qemu user can read it.
+GOLDEN_DIR="/var/lib/libvirt/images"
 GOLDEN_PATH="$GOLDEN_DIR/kali-golden.qcow2"
 
 ISOLATE_FROM_HOST="${ISOLATE_FROM_HOST:-0}"
@@ -54,7 +56,8 @@ if ! id -nG "$USER" | tr ' ' '\n' | grep -qx libvirt; then
   fail "$USER not in 'libvirt' group. Logout and back in after phase 8, then re-run."
 fi
 
-mkdir -p "$(dirname "$ARCHIVE_PATH")" "$GOLDEN_DIR"
+mkdir -p "$(dirname "$ARCHIVE_PATH")"
+sudo mkdir -p "$GOLDEN_DIR"
 
 # ---------------------------------------------------------------------------
 log "Downloading Kali pre-built QEMU archive if missing"
@@ -69,29 +72,32 @@ fi
 # ---------------------------------------------------------------------------
 log "Extracting Kali QEMU image (golden disk)"
 if [[ ! -f "$GOLDEN_PATH" ]]; then
-  # IMPORTANT: extract on a disk-backed filesystem, not /tmp (which is tmpfs
-  # on Arch and would consume RAM). 10-15 GB during extraction.
+  # IMPORTANT: extract on a disk-backed filesystem, not /tmp (tmpfs on Arch).
+  # We use a temp dir on the same filesystem as GOLDEN_DIR to keep the
+  # final move fast (no cross-fs copy).
   TMP_EXTRACT="$GOLDEN_DIR/.extract-tmp"
-  rm -rf "$TMP_EXTRACT"
-  mkdir -p "$TMP_EXTRACT"
+  sudo rm -rf "$TMP_EXTRACT"
+  sudo mkdir -p "$TMP_EXTRACT"
+  sudo chmod 777 "$TMP_EXTRACT"  # so 7z (run as user) can write
 
   log "Extracting archive to $TMP_EXTRACT (disk-backed, ~10-15 GB during extraction)"
   7z x -o"$TMP_EXTRACT" "$ARCHIVE_PATH" >/dev/null
 
   EXTRACTED_QCOW=$(find "$TMP_EXTRACT" -maxdepth 3 -name '*.qcow2' -type f | head -1)
   if [[ -z "$EXTRACTED_QCOW" ]]; then
-    rm -rf "$TMP_EXTRACT"
+    sudo rm -rf "$TMP_EXTRACT"
     fail "No .qcow2 found in extracted archive. Inspect $ARCHIVE_PATH manually."
   fi
 
   log "Moving golden disk to $GOLDEN_PATH"
-  mv "$EXTRACTED_QCOW" "$GOLDEN_PATH"
-  rm -rf "$TMP_EXTRACT"
+  sudo mv "$EXTRACTED_QCOW" "$GOLDEN_PATH"
+  sudo rm -rf "$TMP_EXTRACT"
 
-  log "Marking golden disk read-only (required for transient overlay)"
-  chmod 444 "$GOLDEN_PATH"
+  log "Marking golden disk read-only (required for transient overlay) and qemu-readable"
+  sudo chown root:libvirt "$GOLDEN_PATH"
+  sudo chmod 444 "$GOLDEN_PATH"
 else
-  log "Golden disk already present at $GOLDEN_PATH ($(du -h "$GOLDEN_PATH" | cut -f1))"
+  log "Golden disk already present at $GOLDEN_PATH ($(sudo du -h "$GOLDEN_PATH" | cut -f1))"
 fi
 
 # ---------------------------------------------------------------------------

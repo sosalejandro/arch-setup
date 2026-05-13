@@ -22,7 +22,9 @@ VCPUS=2
 
 # Lubuntu Live ISO — adjust release if newer LTS available
 ISO_URL="https://cdimage.ubuntu.com/lubuntu/releases/24.04.3/release/lubuntu-24.04.3-desktop-amd64.iso"
-ISO_DIR="$HOME/VMs/iso"
+# libvirt's qemu drops privileges and cannot traverse mode-750 home dirs.
+# Store VM media in libvirt's standard system path so qemu can access it.
+ISO_DIR="/var/lib/libvirt/images"
 ISO_PATH="$ISO_DIR/lubuntu-live.iso"
 
 # ---------------------------------------------------------------------------
@@ -57,14 +59,15 @@ if ! sudo virsh net-info default 2>/dev/null | grep -q "Active:.*yes"; then
 fi
 
 # ---------------------------------------------------------------------------
-log "Downloading Lubuntu Live ISO if missing"
-mkdir -p "$ISO_DIR"
+log "Downloading Lubuntu Live ISO if missing (to libvirt-accessible path)"
+sudo mkdir -p "$ISO_DIR"
 if [[ ! -f "$ISO_PATH" ]]; then
   log "Fetching from $ISO_URL"
-  curl -fL --progress-bar -o "$ISO_PATH.tmp" "$ISO_URL"
-  mv "$ISO_PATH.tmp" "$ISO_PATH"
+  sudo curl -fL --progress-bar -o "$ISO_PATH.tmp" "$ISO_URL"
+  sudo mv "$ISO_PATH.tmp" "$ISO_PATH"
+  sudo chmod 644 "$ISO_PATH"
 else
-  log "ISO already present at $ISO_PATH ($(du -h "$ISO_PATH" | cut -f1))"
+  log "ISO already present at $ISO_PATH ($(sudo du -h "$ISO_PATH" | cut -f1))"
 fi
 
 # ---------------------------------------------------------------------------

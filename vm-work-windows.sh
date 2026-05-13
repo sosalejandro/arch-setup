@@ -33,12 +33,16 @@ RAM_MB=8192
 VCPUS=4
 DISK_SIZE_GB=60   # qcow2 max — only consumed as used
 
+# Source files in user home (you download these manually).
 VHDX_PATH="$HOME/VMs/iso/WinDev.vhdx"
 WIN_ISO_PATH="$HOME/VMs/iso/win11.iso"
+# libvirt-managed VM media must live where qemu can read it
+# (qemu drops privileges and cannot traverse mode-750 home dirs).
+LIBVIRT_DIR="/var/lib/libvirt/images"
 VIRTIO_ISO_URL="https://fedorapeople.org/groups/virt/virtio-win/direct-downloads/latest-virtio/virtio-win.iso"
-VIRTIO_ISO_PATH="$HOME/VMs/iso/virtio-win.iso"
-DISK_DIR="$HOME/VMs/disks"
-DISK_PATH="$DISK_DIR/${VM_NAME}.qcow2"
+VIRTIO_ISO_PATH="$LIBVIRT_DIR/virtio-win.iso"
+WIN_ISO_DEST="$LIBVIRT_DIR/win11.iso"
+DISK_PATH="$LIBVIRT_DIR/${VM_NAME}.qcow2"
 
 # ---------------------------------------------------------------------------
 log()  { printf "\n\033[1;34m==>\033[0m %s\n" "$*"; }
@@ -62,7 +66,8 @@ if ! id -nG "$USER" | tr ' ' '\n' | grep -qx libvirt; then
   fail "$USER not in 'libvirt' group. Logout and back in after phase 8, then re-run."
 fi
 
-mkdir -p "$DISK_DIR" "$(dirname "$WIN_ISO_PATH")"
+mkdir -p "$(dirname "$WIN_ISO_PATH")"
+sudo mkdir -p "$LIBVIRT_DIR"
 
 # ---------------------------------------------------------------------------
 # Decide which mode to run in
@@ -100,8 +105,10 @@ fi
 if [[ "$MODE" == "devvm" ]]; then
   if [[ ! -f "$DISK_PATH" ]]; then
     log "Converting VHDX → qcow2 (~5-10 min for a 20 GB image)"
-    qemu-img convert -f vhdx -O qcow2 -p "$VHDX_PATH" "$DISK_PATH"
-    log "Conversion done. qcow2 size: $(du -h "$DISK_PATH" | cut -f1)"
+    sudo qemu-img convert -f vhdx -O qcow2 -p "$VHDX_PATH" "$DISK_PATH"
+    sudo chown root:libvirt "$DISK_PATH"
+    sudo chmod 660 "$DISK_PATH"
+    log "Conversion done. qcow2 size: $(sudo du -h "$DISK_PATH" | cut -f1)"
   else
     log "qcow2 disk already exists at $DISK_PATH (skipping conversion)"
   fi
@@ -113,13 +120,23 @@ fi
 if [[ "$MODE" == "iso" ]]; then
   if [[ ! -f "$DISK_PATH" ]]; then
     log "Creating blank ${DISK_SIZE_GB} GB qcow2 disk"
-    qemu-img create -f qcow2 "$DISK_PATH" "${DISK_SIZE_GB}G"
+    sudo qemu-img create -f qcow2 "$DISK_PATH" "${DISK_SIZE_GB}G"
+    sudo chown root:libvirt "$DISK_PATH"
+    sudo chmod 660 "$DISK_PATH"
+  fi
+
+  # Copy Windows ISO into libvirt-accessible path
+  if [[ ! -f "$WIN_ISO_DEST" ]]; then
+    log "Copying Windows ISO to libvirt-accessible path"
+    sudo cp "$WIN_ISO_PATH" "$WIN_ISO_DEST"
+    sudo chmod 644 "$WIN_ISO_DEST"
   fi
 
   if [[ ! -f "$VIRTIO_ISO_PATH" ]]; then
     log "Downloading VirtIO drivers ISO (~500 MB)"
-    curl -fL --progress-bar -o "$VIRTIO_ISO_PATH.tmp" "$VIRTIO_ISO_URL"
-    mv "$VIRTIO_ISO_PATH.tmp" "$VIRTIO_ISO_PATH"
+    sudo curl -fL --progress-bar -o "$VIRTIO_ISO_PATH.tmp" "$VIRTIO_ISO_URL"
+    sudo mv "$VIRTIO_ISO_PATH.tmp" "$VIRTIO_ISO_PATH"
+    sudo chmod 644 "$VIRTIO_ISO_PATH"
   fi
 fi
 
@@ -165,7 +182,7 @@ else
       --boot uefi,menu=on \
       --tpm backend.type=emulator,backend.version=2.0,model=tpm-crb \
       --disk path="$DISK_PATH",format=qcow2,bus=virtio \
-      --disk path="$WIN_ISO_PATH",device=cdrom,bus=sata,target.dev=sda \
+      --disk path="$WIN_ISO_DEST",device=cdrom,bus=sata,target.dev=sda \
       --disk path="$VIRTIO_ISO_PATH",device=cdrom,bus=sata,target.dev=sdb \
       --network network=default,model=virtio \
       --graphics spice,listen=127.0.0.1 \
