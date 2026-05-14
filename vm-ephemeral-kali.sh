@@ -138,7 +138,7 @@ else
     --vcpus "$VCPUS" \
     --cpu host-passthrough \
     --osinfo debian13 \
-    --boot bios,menu=on \
+    --boot menu=on \
     --disk path="$GOLDEN_PATH",format=qcow2,bus=virtio,transient=on \
     --network network=default,model=virtio \
     --graphics spice,listen=127.0.0.1 \
