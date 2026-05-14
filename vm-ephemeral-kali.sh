@@ -149,7 +149,15 @@ else
     --noautoconsole \
     --print-xml=1 > /tmp/${VM_NAME}.xml
 
-  log "Hardening XML: removing clipboard channel + USB redirection"
+  # Hardening + correctness rewrites applied to the printed XML:
+  #   - strip spice clipboard channel
+  #   - strip USB redirection devices
+  #   - set <transient shareBacking='yes'/> so qemu opens the golden
+  #     read-only and stacks the discard-on-shutdown overlay on top.
+  #     Without shareBacking='yes' libvirt either makes a full private
+  #     copy of the golden (slow, ~15 GB) or opens the source read-write
+  #     (fails against our chmod 444 golden with "Permission denied").
+  log "Hardening XML: removing clipboard channel + USB redirection; setting transient shareBacking"
   python3 - <<EOF
 import re
 p = '/tmp/${VM_NAME}.xml'
@@ -159,6 +167,7 @@ if m: x = m.group(0)
 x = re.sub(r"<channel type='spicevmc'>.*?</channel>", '', x, flags=re.DOTALL)
 x = re.sub(r"<redirdev[^/]*/>", '', x)
 x = re.sub(r"<redirdev[^>]*>.*?</redirdev>", '', x, flags=re.DOTALL)
+x = re.sub(r"<transient\s*/>", "<transient shareBacking='yes'/>", x)
 with open(p, 'w') as f: f.write(x)
 EOF
 
