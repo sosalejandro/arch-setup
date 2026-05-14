@@ -93,7 +93,11 @@ if [[ ! -f "$GOLDEN_PATH" ]]; then
   sudo mv "$EXTRACTED_QCOW" "$GOLDEN_PATH"
   sudo rm -rf "$TMP_EXTRACT"
 
-  log "Marking golden disk read-only (required for transient overlay) and qemu-readable"
+  # Filesystem-layer protection only. The libvirt disk XML must NOT carry
+  # <readonly/> when transient=on (libvirt rejects that combination); the
+  # overlay is what shields the source from guest writes. chmod 444 here is
+  # defense-in-depth against accidental host-side clobbering.
+  log "Locking golden disk read-only at the FS layer and making it qemu-readable"
   sudo chown root:libvirt "$GOLDEN_PATH"
   sudo chmod 444 "$GOLDEN_PATH"
 else
@@ -135,7 +139,7 @@ else
     --cpu host-passthrough \
     --osinfo debian13 \
     --boot uefi,menu=on \
-    --disk path="$GOLDEN_PATH",format=qcow2,bus=virtio,readonly=on,transient=on \
+    --disk path="$GOLDEN_PATH",format=qcow2,bus=virtio,transient=on \
     --network network=default,model=virtio \
     --graphics spice,listen=127.0.0.1 \
     --video qxl \
