@@ -20,6 +20,8 @@ mainly used over SSH + xRDP from a Windows main laptop.
 | `vm-ephemeral-browser.sh` | Optional utility. Creates a hardened ephemeral Lubuntu Live VM for isolated browsing | On the G7 (over SSH), after phase 8 |
 | `vm-ephemeral-kali.sh` | Optional utility. Creates an ephemeral Kali Live VM for pentest / CTF / forensics work | On the G7 (over SSH), after phase 8 |
 | `vm-work-windows.sh` | Optional utility. Creates a stateful Windows 11 VM (lightweight: 40 GB disk, 8 GB RAM, for .NET + VS Code workload) | On the G7 (over SSH), after phase 8. Requires Win11 ISO downloaded manually first. |
+| `vm-headless-work-ai.sh` | Optional utility. Creates a stateful, headless Ubuntu 24.04 work VM for Python/Node AI dev. Cloud-init provisioned, auto-joins Tailscale. Access via Cursor Remote-SSH from your client. | On the G7 (over SSH), after phase 8. Requires a Tailscale pre-auth key on disk. |
+| `phase9-headless-work-ai.sh` | Optional. In-VM dev stack: uv + Python 3.14, fnm + Node 24 LTS, pnpm, Claude Code CLI, Docker, gh, SOPS, age, direnv, starship. | **Inside the work-ai VM** (over SSH), after `vm-headless-work-ai.sh` finishes cloud-init. |
 | `verify.sh` | Anytime, to sanity-check the setup | On the G7 |
 
 All scripts are idempotent — re-running them is safe.
@@ -71,6 +73,9 @@ curl -fsSL https://raw.githubusercontent.com/<you>/g7-setup/main/phase1-base.sh 
 ./phase6-infrastructure.sh      # Phase 6: optional — cloud / IaC / k8s / Docker
 ./phase7-mobile.sh              # Phase 7: optional — Android / RN
 ./phase8-vms.sh                 # Phase 8: optional — KVM/QEMU VMs
+./vm-headless-work-ai.sh        # Optional: provision a stateful Ubuntu work VM
+# Then SSH into the work-ai VM and run, inside it:
+./phase9-headless-work-ai.sh    # In-VM: Python/Node/Docker/Claude dev stack
 ./verify.sh                     # Sanity check
 ```
 
